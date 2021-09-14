@@ -1,0 +1,55 @@
+TYPES : BEGIN OF lty_amount,
+          kschl TYPE komv-kschl,
+*              kaugr TYPE kaugr,
+          kbetr TYPE komv-kbetr,
+        END OF lty_amount.
+
+DATA : t_condtypes TYPE TABLE OF zsmf_condtypes,
+       lt_amount   TYPE STANDARD TABLE OF lty_amount WITH NON-UNIQUE SORTED KEY by_kschl COMPONENTS kschl,
+       ls_amount   TYPE lty_amount.
+
+
+DATA : lv_xkawrt      TYPE komv-kawrt,
+       lv_kbetr       TYPE komv-kbetr,
+       lv_arbfeld(15) TYPE p.
+
+DATA   xkomv    TYPE STANDARD TABLE OF komv_index
+                     WITH HEADER LINE INITIAL SIZE 50.
+CALL FUNCTION 'ZGSEU003_FM_FILL_ZSMF_CONDTYPE'
+  EXPORTING
+    i_category  = 'A'
+    i_kalsm     = 'ZHWRTH'
+  IMPORTING
+    e_condtypes = t_condtypes.
+
+IF t_condtypes[] IS NOT INITIAL.
+  SORT t_condtypes BY kschl.
+
+  CLEAR lt_amount.
+  LOOP AT  xkomv ASSIGNING FIELD-SYMBOL(<ls_xkomv>) WHERE kschl NE space .
+
+    READ TABLE t_condtypes ASSIGNING FIELD-SYMBOL(<ls_condtype>) WITH KEY kschl = <ls_xkomv>-kschl BINARY SEARCH.
+    IF sy-subrc = 0 AND ( <ls_condtype>-zmfcurr = 'yes' OR <ls_xkomv>-krech = 'A' ).
+      CLEAR: lv_kbetr, lv_xkawrt, lv_arbfeld.
+      CASE <ls_xkomv>-krech.
+        WHEN 'A' .   "percentage
+          lv_xkawrt = REDUCE kawrt( INIT lv_cbv TYPE kawrt
+                                         FOR  <ls_stunr> IN xkomv WHERE ( stunr =  <ls_xkomv>-stunb )
+                                         NEXT lv_cbv = lv_cbv + <ls_stunr>-kbetr ).
+
+          lv_arbfeld = ( lv_xkawrt * <ls_xkomv>-kbetr ).
+          lv_kbetr = lv_arbfeld / 100000.
+        WHEN OTHERS .
+          lv_kbetr = <ls_xkomv>-kbetr.
+      ENDCASE.
+*          APPEND VALUE #( kschl = <ls_xkomv>-kschl
+**                          stunr = <ls_xkomv>-stunr
+*                          kbetr = lv_kbetr ) TO lt_amount.
+      ls_amount-kschl = <ls_xkomv>-kschl.
+      ls_amount-kbetr = lv_kbetr .
+      COLLECT ls_amount INTO lt_amount.
+    ENDIF.
+  ENDLOOP.
+ENDIF.
+clear ls_amount.
+cl_demo_output=>display( lt_amount ).
